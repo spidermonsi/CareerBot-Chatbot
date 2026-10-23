@@ -18,8 +18,8 @@ class Message(BaseModel):
     content: str     # the message text
 
 
-# describes the JSON body that /chat expects.
-# fastAPI rejects anything that doesn't match this shape.
+# describes the JSON body that /chat expects
+# fastAPI rejects anything that doesn't match this shape
 class ChatRequest(BaseModel):
     messages: list[Message]
 
