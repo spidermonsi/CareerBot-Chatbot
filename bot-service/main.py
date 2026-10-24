@@ -8,6 +8,8 @@ from pydantic import BaseModel
 load_dotenv()
 BOT_API_KEY = os.getenv("BOT_API_KEY")
 
+from bot.chatbot import respond  # imported after load_dotenv so env vars are ready
+
 # create the app, all endpoints attach to this object.
 app = FastAPI()
 
@@ -42,23 +44,22 @@ def health():
 def chat(body: ChatRequest, x_api_key: str | None = Header(default=None)):
     check_key(x_api_key) # reject the request if the key is wrong
 
-    # the newest message is the last one in the list
-    last_user = body.messages[-1].content
+    # the last message must be the user's new message
+    if not body.messages or body.messages[-1].role != "user":
+        raise HTTPException(status_code=400, detail="Last message  must be from the user")
 
-    # a generator: each "yield" sends out a piece of the reply
-    # later this will send Groq's answer piece by piece
-    def stream():
-        yield f"You said: {last_user}"
+    history = [{"role": m.role, "content": m.content} for m in body.messages[:-1]]
+    message = body.messages[-1].content
 
+    d, pieces = respond(history, message)   # the bot runs here  
 
-    # send the generator's output as it is produced
     return StreamingResponse(
-        stream(),
+        pieces,
         media_type="text/plain", #the reply is plain text
         # extra info send alongside the reply (placeholders for now)
         headers={
-            "X-Intent": "placeholder",
-            "X-Confidence": "0.0",
-            "X-Route": "static",
+            "X-Intent": d["intent"] or "none",
+            "X-Confidence": f"{d['score']:.3f}",
+            "X-Route": d["action"],
         },
     )
