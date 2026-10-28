@@ -5,13 +5,19 @@ import ReactMarkdown from "react-markdown";
 
 type Message = { role: "user" | "assistant"; content: string };
 
-export default function ChatWindow() {
-  const [messages, setMessages] = useState<Message[]>([]);
+type Props = {
+  initialConversationId?: string;
+  initialMessages?: Message[];
+};
+
+export default function ChatWindow({ initialConversationId, initialMessages = [] }: Props) {
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // scroll to the newest message whenever the list changes
+  // Scroll to the newest message whenever the list changes
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -22,7 +28,7 @@ export default function ChatWindow() {
     if (!text || loading) return;
 
     const history: Message[] = [...messages, { role: "user", content: text }];
-    // show the user's message plus an empty bot bubble that fills in as text arrives
+    // Show the user's message plus an empty bot bubble that fills in as text arrives
     setMessages([...history, { role: "assistant", content: "" }]);
     setInput("");
     setLoading(true);
@@ -31,11 +37,18 @@ export default function ChatWindow() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ conversationId, message: text }),
       });
       if (!res.ok || !res.body) throw new Error("Request failed");
 
-      // read the streamed reply piece by piece
+      // A new chat gets its ID from the server; put it in the URL without reloading
+      const newId = res.headers.get("X-Conversation-Id");
+      if (newId && newId !== conversationId) {
+        setConversationId(newId);
+        window.history.replaceState(null, "", `/c/${newId}`);
+      }
+
+      // Read the streamed reply piece by piece
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let reply = "";

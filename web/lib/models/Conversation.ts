@@ -13,10 +13,10 @@ const messageSchema = new Schema({
 
 const conversationSchema = new Schema(
     {
-        guestID: {type: String, required: true },
+        guestId: {type: String, required: true },
         title: { type: String, default: "New chat" },
         messages: { type: [messageSchema], default: []},
-        expiredAt: { type: Date, required: true }, // auto-delete after this date
+        expiresAt: { type: Date, required: true }, // auto-delete after this date
     },
     { timestamps: true } // adds createdAt and updatedAt automatically
 );
