@@ -20,8 +20,10 @@ export default async function ConversationPage({
   if (!conversation) notFound();
 
   const messages = conversation.messages.map((m) => ({
+    id: String(m._id),
     role: m.role as "user" | "assistant",
     content: m.content,
+    feedback: (m.feedback as "up" | "down" | null | undefined) ?? undefined,
   }));
 
   return <ChatWindow key={id} initialConversationId={id} initialMessages={messages} />;

@@ -1,8 +1,9 @@
 import mongoose from "mongoose";
+import type { HydratedDocument } from "mongoose";
 import { callBot, type ChatMessage } from "@/lib/botClient";
 import { getGuestId } from "@/lib/guest";
 import { connectDB } from "@/lib/mongodb";
-import { Conversation } from "@/lib/models/Conversation";
+import { Conversation, type ConversationDoc } from "@/lib/models/Conversation";
 
 export const maxDuration = 60;
 
@@ -18,8 +19,9 @@ export async function POST(request: Request) {
 
   // 2. Validate the input
   const body = await request.json().catch(() => null);
+  const regenerate = body?.regenerate === true;
   const text = typeof body?.message === "string" ? body.message.trim() : "";
-  if (text.length === 0 || text.length > 1000) {
+  if (!regenerate && (text.length === 0 || text.length > 1000)) {
     return Response.json({ error: "Message must be 1 to 1000 characters" }, { status: 400 });
   }
 
@@ -27,7 +29,8 @@ export async function POST(request: Request) {
 
   // 3. Open the existing conversation, or start a new one
   const conversationId = body?.conversationId;
-  let conversation;
+  let conversation: HydratedDocument<ConversationDoc> | null = null;
+
   if (conversationId) {
     if (!mongoose.isValidObjectId(conversationId)) {
       return Response.json({ error: "Not found" }, { status: 404 });
@@ -37,6 +40,8 @@ export async function POST(request: Request) {
     if (!conversation) {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
+  } else if (regenerate) {
+    return Response.json({ error: "Nothing to regenerate" }, { status: 400 });
   } else {
     conversation = new Conversation({
       guestId,
@@ -45,10 +50,24 @@ export async function POST(request: Request) {
     });
   }
 
-  // 4. Save the user's message
-  conversation.messages.push({ role: "user", content: text, createdAt: new Date() });
+  // 4. Save the user's message, or prepare a regenerate
+  if (regenerate) {
+    // Drop the old answer (if there is one) and answer the last user message again
+    const last = conversation.messages[conversation.messages.length - 1];
+    if (last?.role === "assistant") conversation.messages.pop();
+
+    const newLast = conversation.messages[conversation.messages.length - 1];
+    if (newLast?.role !== "user") {
+      return Response.json({ error: "Nothing to regenerate" }, { status: 400 });
+    }
+  } else {
+    conversation.messages.push({ role: "user", content: text, createdAt: new Date() });
+  }
   conversation.expiresAt = newExpiry();
   await conversation.save();
+
+  const savedId = conversation._id;
+  const conversationHeader = { "X-Conversation-Id": savedId.toString() };
 
   // 5. Ask the bot, using the last 10 saved messages
   const history: ChatMessage[] = conversation.messages
@@ -58,17 +77,27 @@ export async function POST(request: Request) {
   let upstream: Response;
   try {
     upstream = await callBot(history);
-  } catch {
-    return Response.json({ error: "Bot service is unavailable" }, { status: 502 });
+  } catch (err) {
+    console.error("Could not reach the bot service:", err);
+    return Response.json(
+      { error: "Bot service is unavailable" },
+      { status: 502, headers: conversationHeader }
+    );
   }
   if (!upstream.ok || !upstream.body) {
-    return Response.json({ error: "Bot service error" }, { status: 502 });
+    console.error("Bot service returned status", upstream.status);
+    return Response.json(
+      { error: "Bot service error" },
+      { status: 502, headers: conversationHeader }
+    );
   }
 
   const intent = upstream.headers.get("X-Intent") ?? "";
   const confidence = parseFloat(upstream.headers.get("X-Confidence") ?? "");
   const route = upstream.headers.get("X-Route") ?? "";
-  const savedId = conversation._id;
+
+  // Create the assistant message's ID now, so the browser can use it for feedback
+  const assistantMessageId = new mongoose.Types.ObjectId();
 
   // 6. A pipe that passes the stream through unchanged, keeps a copy, and saves it at the end
   const decoder = new TextDecoder();
@@ -87,6 +116,7 @@ export async function POST(request: Request) {
           {
             $push: {
               messages: {
+                _id: assistantMessageId,
                 role: "assistant",
                 content: reply,
                 intent: intent && intent !== "none" ? intent : undefined,
@@ -107,7 +137,8 @@ export async function POST(request: Request) {
   return new Response(upstream.body.pipeThrough(saver), {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
-      "X-Conversation-Id": savedId.toString(),
+      ...conversationHeader,
+      "X-Message-Id": assistantMessageId.toString(),
       "X-Intent": intent,
       "X-Confidence": upstream.headers.get("X-Confidence") ?? "",
       "X-Route": route,
