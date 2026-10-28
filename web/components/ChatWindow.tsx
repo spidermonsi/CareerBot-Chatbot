@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -16,8 +17,9 @@ export default function ChatWindow({ initialConversationId, initialMessages = []
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
-  // Scroll to the newest message whenever the list changes
+  // scroll to the newest message whenever the list changes
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -28,7 +30,7 @@ export default function ChatWindow({ initialConversationId, initialMessages = []
     if (!text || loading) return;
 
     const history: Message[] = [...messages, { role: "user", content: text }];
-    // Show the user's message plus an empty bot bubble that fills in as text arrives
+    // show the user's message plus an empty bot bubble that fills in as text arrives
     setMessages([...history, { role: "assistant", content: "" }]);
     setInput("");
     setLoading(true);
@@ -41,14 +43,16 @@ export default function ChatWindow({ initialConversationId, initialMessages = []
       });
       if (!res.ok || !res.body) throw new Error("Request failed");
 
-      // A new chat gets its ID from the server; put it in the URL without reloading
+      // a brand new chat gets its ID from the server
+      let createdId: string | null = null;
       const newId = res.headers.get("X-Conversation-Id");
       if (newId && newId !== conversationId) {
         setConversationId(newId);
-        window.history.replaceState(null, "", `/c/${newId}`);
+        createdId = newId;
+        window.dispatchEvent(new Event("conversations-changed")); // show it in the sidebar now
       }
 
-      // Read the streamed reply piece by piece
+      // read the streamed reply piece by piece
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let reply = "";
@@ -58,6 +62,10 @@ export default function ChatWindow({ initialConversationId, initialMessages = []
         reply += decoder.decode(value, { stream: true });
         setMessages([...history, { role: "assistant", content: reply }]);
       }
+
+      // the reply is saved now: refresh the sidebar order, and move a new chat to its own URL
+      window.dispatchEvent(new Event("conversations-changed"));
+      if (createdId) router.replace(`/c/${createdId}`);
     } catch {
       setMessages([
         ...history,
@@ -69,11 +77,7 @@ export default function ChatWindow({ initialConversationId, initialMessages = []
   }
 
   return (
-    <div className="flex h-screen flex-col bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
-      <header className="border-b border-gray-200 px-4 py-3 font-semibold dark:border-gray-800">
-        CareerBot
-      </header>
-
+    <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto flex max-w-3xl flex-col gap-4">
           {messages.length === 0 && (
