@@ -5,6 +5,8 @@ import { getGuestId } from "@/lib/guest";
 import { connectDB } from "@/lib/mongodb";
 import { Conversation } from "@/lib/models/Conversation";
 
+export const instant = false;
+
 export default async function ConversationPage({
   params,
 }: {
