@@ -24,7 +24,7 @@ function getLimiters(): Limiters | null {
     // each guest: 20 messages per 10 minutes
     guest: new Ratelimit({
       redis,
-      limiter: Ratelimit.slidingWindow(3, "1 m"),
+      limiter: Ratelimit.slidingWindow(20, "10 m"),
       prefix: "rl:guest",
     }),
     // each IP address: 60 messages per hour
