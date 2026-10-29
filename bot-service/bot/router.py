@@ -2,24 +2,19 @@ import json
 from pathlib import Path
 
 import numpy as np
-from sentence_transformers import SentenceTransformer
 import re
 
 from bot.lexicons import find_non_cs_fields, has_cs_signal
 from bot.preprocess import MAX_INPUT_CHARS, normalize_query
 from bot.responses import greeting_kind
+from bot.embedder import embed_texts
 
-
-MODEL_NAME = "all-MiniLM-L6-v2"
 THRESHOLD = 0.35          # below this similarity, the classifier is unsure
 MAX_FOLLOWUP_WORDS = 10   # short messages mid-conversation count as follow ups
 KEYWORD_BOOST = 0.15      # a small nudge for messages containing intent keywords
 
 CENTROIDS_PATH = Path(__file__).resolve().parent.parent / "artifacts" / "centroids.json"
 
-
-# loaded once when the server starts, not on every request
-model = SentenceTransformer(MODEL_NAME)
 
 _raw = json.loads(CENTROIDS_PATH.read_text(encoding="utf-8"))
 centroids = {name: np.array(vec, dtype=np.float32) for name, vec in _raw.items()}
@@ -38,10 +33,6 @@ KEYWORD_PATTERNS = {name: re.compile(p) for name, p in {
     "skill_recommendation": r"\b(skills?|roadmap|pag-aralan|aralin|certifications?|frameworks?)\b",
 }.items()}
 
-
-def embed_texts(texts):
-    # turns text into normalized 384-number vectors
-    return model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
 
 
 def rank_intents(text):

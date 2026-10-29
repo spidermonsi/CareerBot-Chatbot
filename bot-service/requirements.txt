@@ -1,7 +1,8 @@
 fastapi
 uvicorn
 python-dotenv
-sentence-transformers
+onnxruntime
+tokenizers
 numpy
 symspellpy
 groq
