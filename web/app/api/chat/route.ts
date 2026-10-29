@@ -1,3 +1,4 @@
+import { checkRateLimit, getClientIp } from "@/lib/ratelimit";
 import mongoose from "mongoose";
 import type { HydratedDocument } from "mongoose";
 import { callBot, type ChatMessage } from "@/lib/botClient";
@@ -15,6 +16,19 @@ export async function POST(request: Request) {
   const guestId = await getGuestId();
   if (!guestId) {
     return Response.json({ error: "No guest session" }, { status: 401 });
+  }
+
+  // Rate limit: stop spam before touching the database or the bot
+  const limit = await checkRateLimit(guestId, getClientIp(request));
+  if (!limit.allowed) {
+    const wait =
+      limit.retryAfterSeconds < 60
+        ? `${limit.retryAfterSeconds} seconds`
+        : `${Math.ceil(limit.retryAfterSeconds / 60)} minutes`;
+    return Response.json(
+      { error: `You're sending messages too fast. Please wait about ${wait} and try again.` },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
   }
 
   // 2. Validate the input

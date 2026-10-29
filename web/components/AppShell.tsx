@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false); // is the mobile drawer open?
+
+  // Wake up the bot service as soon as the site loads.
+  useEffect(() => {
+    fetch("/api/health", { cache: "no-store" }).catch(() => {});
+  }, []);
 
   return (
     <div className="flex h-screen bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
